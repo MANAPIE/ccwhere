@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# 에디터
+.history/
+.vscode/
+.idea/
+*.swp
+*~
+
+# 임시
+*.tmp
+*.bak
