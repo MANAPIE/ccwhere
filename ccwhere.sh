@@ -169,8 +169,13 @@ build_frame() {
 
     proj=$(basename "$(dirname "$f")")
     proj=${proj#-}
-    proj=$(printf '%s' "$proj" | sed 's|-|/|g')
-    proj=$(basename "$proj")
+    last=${proj##*-}
+    rest=${proj%-*}
+    if [ -n "$rest" ] && [ "$rest" != "$proj" ]; then
+      proj="${rest##*-}-$last"
+    else
+      proj="$last"
+    fi
     [ -z "$proj" ] && proj=' '
 
     msgs=$(wc -l < "$f" | tr -d ' ')
