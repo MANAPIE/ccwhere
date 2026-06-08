@@ -171,6 +171,7 @@ build_frame() {
     proj=${proj#-}
     proj=$(printf '%s' "$proj" | sed 's|-|/|g')
     proj=$(basename "$proj")
+    [ -z "$proj" ] && proj=' '
 
     msgs=$(wc -l < "$f" | tr -d ' ')
 
