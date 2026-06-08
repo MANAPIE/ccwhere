@@ -50,6 +50,7 @@ WIN_HOURS=$((CUTOFF_MIN / 60))
 # ---------------------------------------------------------------------------
 JQ_LAST_MSG=$(mktemp -t ccwhere-jq-msg.XXXXXX) || exit 1
 JQ_MODEL=$(mktemp -t ccwhere-jq-model.XXXXXX) || exit 1
+JQ_TRUNC=$(mktemp -t ccwhere-jq-trunc.XXXXXX) || exit 1
 
 cat > "$JQ_LAST_MSG" <<'JQEOF'
 def cw: if . > 255 then 2 else 1 end;
@@ -89,6 +90,8 @@ def trunc_w($max):
     (startswith("[Request interrupted") | not) and
     (startswith("Caveat:")              | not)
   ))
+| map(sub("^<(?<t>[A-Za-z][A-Za-z0-9_-]*)[^>]*>.*?</\\k<t>>[[:space:]]*"; ""))
+| map(select(. != ""))
 | if length > 0
   then (.[-1] | trunc_w($max))
   else ""
@@ -100,11 +103,34 @@ cat > "$JQ_MODEL" <<'JQEOF'
 | if length > 0 then .[-1].message.model else "?" end
 JQEOF
 
+cat > "$JQ_TRUNC" <<'JQEOF'
+def cw: if . > 255 then 2 else 1 end;
+
+def trunc_w($max):
+  . as $orig
+  | ([$orig | explode[] | cw] | add // 0) as $tw
+  | if $tw <= $max then $orig
+    else
+      ($orig | explode
+       | reduce .[] as $c ({c: [], w: 0, d: false};
+           if .d then .
+           else (($c | cw) as $cw
+                 | if .w + $cw > ($max - 2)
+                   then .d = true
+                   else {c: (.c + [$c]), w: (.w + $cw), d: false}
+                   end)
+           end)
+       | (.c | implode) + "…")
+    end;
+
+trunc_w($w)
+JQEOF
+
 # ---------------------------------------------------------------------------
 # 정리
 # ---------------------------------------------------------------------------
 cleanup() {
-  rm -f "$JQ_LAST_MSG" "$JQ_MODEL"
+  rm -f "$JQ_LAST_MSG" "$JQ_MODEL" "$JQ_TRUNC"
   printf '\033[?25h'
   printf '\n  %s종료%s\n' "$DIM" "$RST"
 }
@@ -148,12 +174,13 @@ build_frame() {
   if [ "${MSG_MAX:-0}" -gt 0 ] 2>/dev/null; then
     msg_max=$MSG_MAX
   else
-    msg_max=$((cols - 50))
+    msg_max=$cols
     [ "$msg_max" -lt 20 ] && msg_max=20
-    [ "$msg_max" -gt 200 ] && msg_max=200
   fi
 
-  # 헤더(2줄) + 푸터(2줄) = 4줄 차감, 잘림 표시 여유 1줄
+  line_w=$((cols - 3))
+  [ "$line_w" -lt 10 ] && line_w=10
+
   max_data=$((rows - 5))
   [ "$max_data" -lt 3 ] && max_data=3
 
@@ -223,6 +250,7 @@ build_frame() {
         "$TAB" "$TAB" "$TAB" "$TAB" "$TAB"
       sort -k1 -n "$TMP" | cut -f2- | head -n "$max_data"
     } | column -t -s "$TAB" \
+      | jq_run -Rr --argjson w "$line_w" -f "$JQ_TRUNC" \
       | sed -e "s/● active/${GRN}● active${RST}/" \
             -e "s/◐ recent/${YLW}◐ recent${RST}/" \
             -e "s/○ idle/${GRY}○ idle${RST}/" \
